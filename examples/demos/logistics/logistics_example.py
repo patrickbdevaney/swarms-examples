@@ -1,8 +1,8 @@
 import os
-
+import json
+from typing import Optional, Dict, Any
 from dotenv import load_dotenv
-
-from swarm_models import GPT4VisionAPI
+from openai import OpenAI
 from swarms.prompts.logistics import (
     Efficiency_Agent_Prompt,
     Health_Security_Agent_Prompt,
@@ -14,84 +14,116 @@ from swarms.prompts.logistics import (
 )
 from swarms.structs import Agent
 
-# from swarms.utils.banana_wrapper import banana
-
+# Load environment variables
 load_dotenv()
 api_key = os.getenv("OPENAI_API_KEY")
+if not api_key:
+    print("Error: API key not found in environment variables")
+    exit(1)
 
-# GPT4VisionAPI or llama
-# @banana #- deploy to banana
-llm = GPT4VisionAPI(openai_api_key=api_key)
+print("API Key Loaded:", api_key is not None)
 
-# Image for analysis
-factory_image = "factory_image1.jpg"
+# Initialize OpenAI client
+client = OpenAI(api_key=api_key)
 
-# Initialize agents with respective prompts
-health_security_agent = Agent(
-    llm=llm,
-    sop=Health_Security_Agent_Prompt,
-    max_loops=1,
-    multi_modal=True,
-)
+class VisionAPI:
+    def __init__(self, client: OpenAI, model: str = "gpt-4o-mini"):
+        self.client = client
+        self.model = model
 
-quality_control_agent = Agent(
-    llm=llm,
-    sop=Quality_Control_Agent_Prompt,
-    max_loops=1,
-    multi_modal=True,
-)
+    def run(self, prompt: str, image_url: str) -> Optional[str]:
+        print(f"Processing: {prompt[:50]}... for image URL")
+        try:
+            # Combine the prompt and image URL into a single string
+            full_prompt = f"{prompt}\n\nImage URL: {image_url}"
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": full_prompt,  # Send the full prompt as a single string
+                    }
+                ],
+                max_tokens=500
+            )
+            return response.choices[0].message.content
+        except Exception as e:
+            print(f"Error in API call: {str(e)}")
+            return None
 
-productivity_agent = Agent(
-    llm=llm,
-    sop=Productivity_Agent_Prompt,
-    max_loops=1,
-    multi_modal=True,
-)
+# Initialize vision API
+vision_api = VisionAPI(client=client)
 
-safety_agent = Agent(
-    llm=llm, sop=Safety_Agent_Prompt, max_loops=1, multi_modal=True
-)
+# Initialize agents
+agents = {
+    "health_security_analysis": Agent(
+        llm=vision_api,
+        sop=Health_Security_Agent_Prompt,
+        max_loops=1,
+        multi_modal=True,
+    ),
+    "quality_control_analysis": Agent(
+        llm=vision_api,
+        sop=Quality_Control_Agent_Prompt,
+        max_loops=1,
+        multi_modal=True,
+    ),
+    "productivity_analysis": Agent(
+        llm=vision_api,
+        sop=Productivity_Agent_Prompt,
+        max_loops=1,
+        multi_modal=True,
+    ),
+    "safety_analysis": Agent(
+        llm=vision_api,
+        sop=Safety_Agent_Prompt,
+        max_loops=1,
+        multi_modal=True,
+    ),
+    "security_analysis": Agent(
+        llm=vision_api,
+        sop=Security_Agent_Prompt,
+        max_loops=1,
+        multi_modal=True,
+    ),
+    "sustainability_analysis": Agent(
+        llm=vision_api,
+        sop=Sustainability_Agent_Prompt,
+        max_loops=1,
+        multi_modal=True,
+    ),
+    "efficiency_analysis": Agent(
+        llm=vision_api,
+        sop=Efficiency_Agent_Prompt,
+        max_loops=1,
+        multi_modal=True,
+    ),
+}
 
-security_agent = Agent(
-    llm=llm, sop=Security_Agent_Prompt, max_loops=1, multi_modal=True
-)
+# URL of the image for analysis
+image_url = "https://raw.githubusercontent.com/patrickbdevaney/swarms-examples/main/examples/demos/logistics/factory_image1.jpg"  
+# Run agents and collect results
+results = {}
+for key, agent in agents.items():
+    print(f"\nRunning {key.replace('_', ' ').title()}...")
+    try:
+        task = f"Analyze the following image for {key.replace('_', ' ')}"
+        result = agent.run(task, image_url)  # Pass the image URL to the agent's run method
+        print(f"✓ {key.replace('_', ' ').title()} completed")
+        results[key] = result
+    except Exception as e:
+        print(f"✗ Error in {key}: {str(e)}")
+        results[key] = f"Error: {str(e)}"
 
-sustainability_agent = Agent(
-    llm=llm,
-    sop=Sustainability_Agent_Prompt,
-    max_loops=1,
-    multi_modal=True,
-)
+# Save results to a JSON file
+output_file = "factory_analysis_results.json"
+with open(output_file, "w") as json_file:
+    json.dump(results, json_file, indent=4)
 
-efficiency_agent = Agent(
-    llm=llm,
-    sop=Efficiency_Agent_Prompt,
-    max_loops=1,
-    multi_modal=True,
-)
+print(f"\nResults saved to {output_file}")
 
-# Run agents with respective tasks on the same image
-health_analysis = health_security_agent.run(
-    "Analyze the safety of this factory", factory_image
-)
-quality_analysis = quality_control_agent.run(
-    "Examine product quality in the factory", factory_image
-)
-productivity_analysis = productivity_agent.run(
-    "Evaluate factory productivity", factory_image
-)
-safety_analysis = safety_agent.run(
-    "Inspect the factory's adherence to safety standards",
-    factory_image,
-)
-security_analysis = security_agent.run(
-    "Assess the factory's security measures and systems",
-    factory_image,
-)
-sustainability_analysis = sustainability_agent.run(
-    "Examine the factory's sustainability practices", factory_image
-)
-efficiency_analysis = efficiency_agent.run(
-    "Analyze the efficiency of the factory's manufacturing process",
-    factory_image,
-)
+# Print summary
+print("\nAnalysis Summary:")
+for key, result in results.items():
+    status = "✓ Success" if "Error" not in str(result) else "✗ Failed"
+    print(f"{status}: {key.replace('_', ' ').title()}")
